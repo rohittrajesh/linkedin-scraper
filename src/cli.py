@@ -7,7 +7,12 @@ import typer
 from src.db import init_db, SessionLocal
 init_db()
 
-from src.linkedin_scraper import ensure_logged_in, fetch_profile_info, fetch_all_posts
+from src.linkedin_scraper import (
+    ensure_logged_in,
+    fetch_profile_info,
+    fetch_all_posts,
+)
+from src.linkedin_summarizer import summarize_profile
 from src.models import Profile, Post
 
 app = typer.Typer()
@@ -59,3 +64,18 @@ def scrape(profile_url: str):
     db.commit()
 
     typer.echo(f"✅ Saved profile '{profile.name}' plus {len(posts)} posts.")
+
+@app.command()  
+def summarize(profile_url: str):
+    """
+    Generate and display a 3 to 5 sentence summary of all saved posts for PROFILE_URL.
+    """
+    summary = summarize_profile(profile_url)
+    typer.echo("\n🔍 Summary:\n")
+    typer.echo(summary)
+
+if __name__ == "__main__":
+    app()
+
+if __name__ == "__main__":
+    app()

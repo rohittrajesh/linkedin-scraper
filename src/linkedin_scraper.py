@@ -1,11 +1,9 @@
-# src/linkedin_scraper.py
-
 import os
 from datetime import datetime
-from playwright.sync_api import BrowserContext, sync_playwright
+from playwright.sync_api import sync_playwright, BrowserContext
 from src.config import PLAYWRIGHT_HEADLESS, SESSION_FILE, logger
 
-_playwright = None 
+_playwright = None
 
 def ensure_logged_in() -> BrowserContext:
     """
@@ -14,50 +12,76 @@ def ensure_logged_in() -> BrowserContext:
     global _playwright
     _playwright = sync_playwright().start()
     browser = _playwright.chromium.launch(headless=PLAYWRIGHT_HEADLESS)
-    context = browser.new_context()
 
+    # 1) If we have a session file, load it
     if os.path.exists(SESSION_FILE):
         logger.info(f"Restoring session from {SESSION_FILE}")
-        context.set_storage_state(path=SESSION_FILE)
+        context = browser.new_context(storage_state=SESSION_FILE)
+    else:
+        context = browser.new_context()
 
     page = context.new_page()
-    page.goto("https://www.linkedin.com/feed", wait_until="networkidle")
+    page.goto("https://www.linkedin.com/feed", wait_until="domcontentloaded")
     if "login" in page.url:
-        logger.info("Not logged in—please log in manually in the browser.")
-        page.pause()  
+        logger.info("Not logged in—please log in in the opened browser window.")
+        input("👉 After logging in, press ENTER here to continue…")
         context.storage_state(path=SESSION_FILE)
         logger.info(f"Saved new session to {SESSION_FILE}")
     else:
-        logger.info("Session valid; no login needed.")
+        logger.info("Existing session is valid; no login needed.")
 
     return context
 
+
 def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
     """
-    Given an authenticated BrowserContext and a profile URL,
-    navigate to the page and extract:
-      - url, name, headline, location, email, phone
+    Navigate to PROFILE_URL and extract url, name, headline, location, email, phone.
     """
     page = context.new_page()
-    page.goto(profile_url, wait_until="networkidle")
+    page.goto(profile_url, wait_until="domcontentloaded")
     logger.info(f"Scraping profile info from {profile_url}")
 
-    # ─── Basic fields (selectors may need tweaks!) ─────────────────────────────────
-    name = page.locator("h1.text-heading-xlarge").inner_text().strip()
-    headline = page.locator("div.text-body-medium.break-words").inner_text().strip()
-    location = page.locator("span.text-body-small.inline.t-black--light").inner_text().strip()
+    # NAME
+    page.wait_for_selector("h1", timeout=15000)
+    name_locator = page.locator("h1.text-heading-xlarge")
+    try:
+        if name_locator.count() > 0:
+            name = name_locator.first.inner_text(timeout=5000).strip()
+        else:
+            name = page.locator("h1").first.inner_text(timeout=5000).strip()
+    except:
+        logger.warning("Failed to extract name; setting to empty.")
+        name = ""
 
-    # ─── Contact Info ────────────────────────────────────────────────────────────────
+    # HEADLINE
+    headline = ""
+    try:
+        page.wait_for_selector("div.text-body-medium.break-words", timeout=10000)
+        headline = page.locator("div.text-body-medium.break-words") \
+                       .first.inner_text(timeout=5000).strip()
+    except:
+        logger.warning("Failed to extract headline; setting to empty.")
+
+    # LOCATION
+    location = ""
+    try:
+        page.wait_for_selector("span.text-body-small.inline.t-black--light", timeout=10000)
+        location = page.locator("span.text-body-small.inline.t-black--light") \
+                        .first.inner_text(timeout=5000).strip()
+    except:
+        logger.warning("Failed to extract location; setting to empty.")
+
+    # CONTACT INFO
     email = None
     phone = None
     try:
         page.click("a[data-control-name='contact_see_more']", timeout=5000)
         page.wait_for_selector("section.pv-contact-info", timeout=5000)
-        email_elem = page.locator("section.pv-contact-info a[href^='mailto:']").first
-        email = email_elem.get_attribute("href").replace("mailto:", "") if email_elem else None
-        phone_elem = page.locator("section.pv-contact-info span.t-14").first
-        phone = phone_elem.inner_text().strip() if phone_elem else None
-    except Exception:
+        em = page.locator("section.pv-contact-info a[href^='mailto:']").first
+        if em: email = em.get_attribute("href").replace("mailto:", "").strip()
+        ph = page.locator("section.pv-contact-info span.t-14").first
+        if ph: phone = ph.inner_text().strip()
+    except:
         logger.debug("No contact info found or failed to load.")
 
     page.close()
@@ -70,40 +94,68 @@ def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
         "phone":    phone,
     }
 
-def fetch_all_posts(context: BrowserContext, profile_url: str) -> list[dict]:
+
+# src/linkedin_scraper.py  (only the fetch_all_posts portion)
+
+from datetime import datetime
+from playwright.sync_api import BrowserContext
+from src.config import logger
+
+def fetch_all_posts(context: BrowserContext, profile_url: str, max_posts: int = 50) -> list[dict]:
     """
-    Scrape ALL posts from the profile’s Activity → Posts page.
+    Scrape up to max_posts from the profile’s Activity → Posts page.
     Returns a list of dicts [{ post_url, content, posted_at }, …].
     """
     activity_url = profile_url.rstrip("/") + "/detail/recent-activity/shares/"
     page = context.new_page()
-    page.goto(activity_url, wait_until="networkidle")
+    page.goto(activity_url, wait_until="domcontentloaded")
     logger.info(f"Scraping posts from {activity_url}")
 
-    # ─── Infinite scroll until no more new posts ────────────────────────────────────
-    last_height = page.evaluate("() => document.body.scrollHeight")
-    while True:
-        page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
-        new_height = page.evaluate("() => document.body.scrollHeight")
-        if new_height == last_height:
-            break
-        last_height = new_height
+    # Wait for at least one post card
+    try:
+        page.wait_for_selector("div.occludable-update", timeout=15000)
+    except:
+        logger.warning("No posts found on the activity page.")
+        page.close()
+        return []
+
+    # Do a few page-height scrolls to load posts
+    for _ in range(3):
+        page.evaluate("window.scrollBy(0, window.innerHeight)")
+        page.wait_for_timeout(1000)
+
+    # Now run a JS snippet to extract post_url + content
+    raw_posts = page.evaluate(f"""
+      () => {{
+        const cards = Array.from(
+          document.querySelectorAll('div.occludable-update')
+        ).slice(0, {max_posts});
+        return cards.map(card => {{
+          // First try the newer text‐view selector:
+          let txtEl = card.querySelector("div.feed-shared-text__text-view span[dir='ltr']");
+          // Fallback to the older description selector:
+          if (!txtEl) txtEl = card.querySelector("div.feed-shared-update-v2__description");
+          const content = txtEl ? txtEl.innerText.trim() : "";
+
+          // Post URL is usually on the first app‐aware link in the header:
+          const link = card.querySelector("a.app-aware-link");
+          const post_url = link ? link.href : null;
+
+          return {{ post_url, content }};
+        }});
+      }}
+    """)
 
     posts = []
-    cards = page.locator("div.occludable-update")
-    for i in range(cards.count()):
-        card = cards.nth(i)
-        content = card.locator("div.feed-shared-update-v2__description").inner_text().strip()
-        link_elem = card.locator("a.app-aware-link").first
-        post_url  = link_elem.get_attribute("href") if link_elem else None
-
-        # Timestamp parsing could go here; for now we set UTC now
+    for item in raw_posts:
+        if not item["content"]:
+            continue
         posts.append({
-            "post_url":  post_url,
-            "content":   content,
+            "post_url":  item["post_url"],
+            "content":   item["content"],
             "posted_at": datetime.utcnow(),
         })
 
     page.close()
+    logger.info(f"Extracted {len(posts)} posts (attempted {len(raw_posts)}).")
     return posts

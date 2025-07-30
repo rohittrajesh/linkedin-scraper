@@ -28,12 +28,12 @@ def summarize_posts(post_texts: List[str], max_sentences: int = 5) -> str:
         )}
     ]
     logger.info("Sending summarization request to OpenAI for %d posts", len(post_texts))
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-        temperature=0.7,
-        max_tokens=512,
-    )
+    response = openai.chat.completions.create(
+         model="gpt-3.5-turbo",
+         messages=messages,
+         temperature=0.7,
+         max_tokens=512,
+     )
     summary = response.choices[0].message.content.strip()
     logger.info("Received summary from OpenAI")
     return summary
