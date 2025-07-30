@@ -1,0 +1,30 @@
+# ─── Virtual environment ─────────────────────────────────────────────
+venv/
+
+# ─── Python bytecode & caches ────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ─── Environment files ───────────────────────────────────────────────
+.env           
+
+# ─── Database & state ───────────────────────────────────────────────
+linkedin.db    
+# .linkedin_scraper_session.json
+
+# ─── IDE/editor stuff ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+*.log
+
+# ─── OS files ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Test + coverage outputs ────────────────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
