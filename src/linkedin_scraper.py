@@ -13,7 +13,6 @@ def ensure_logged_in() -> BrowserContext:
     _playwright = sync_playwright().start()
     browser = _playwright.chromium.launch(headless=PLAYWRIGHT_HEADLESS)
 
-    # 1) If we have a session file, load it
     if os.path.exists(SESSION_FILE):
         logger.info(f"Restoring session from {SESSION_FILE}")
         context = browser.new_context(storage_state=SESSION_FILE)
@@ -41,7 +40,6 @@ def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
     page.goto(profile_url, wait_until="domcontentloaded")
     logger.info(f"Scraping profile info from {profile_url}")
 
-    # NAME
     page.wait_for_selector("h1", timeout=15000)
     name_locator = page.locator("h1.text-heading-xlarge")
     try:
@@ -53,7 +51,6 @@ def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
         logger.warning("Failed to extract name; setting to empty.")
         name = ""
 
-    # HEADLINE
     headline = ""
     try:
         page.wait_for_selector("div.text-body-medium.break-words", timeout=10000)
@@ -62,7 +59,6 @@ def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
     except:
         logger.warning("Failed to extract headline; setting to empty.")
 
-    # LOCATION
     location = ""
     try:
         page.wait_for_selector("span.text-body-small.inline.t-black--light", timeout=10000)
@@ -71,7 +67,6 @@ def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
     except:
         logger.warning("Failed to extract location; setting to empty.")
 
-    # CONTACT INFO
     email = None
     phone = None
     try:
@@ -94,13 +89,6 @@ def fetch_profile_info(context: BrowserContext, profile_url: str) -> dict:
         "phone":    phone,
     }
 
-
-# src/linkedin_scraper.py  (only the fetch_all_posts portion)
-
-from datetime import datetime
-from playwright.sync_api import BrowserContext
-from src.config import logger
-
 def fetch_all_posts(context: BrowserContext, profile_url: str, max_posts: int = 50) -> list[dict]:
     """
     Scrape up to max_posts from the profile’s Activity → Posts page.
@@ -111,7 +99,6 @@ def fetch_all_posts(context: BrowserContext, profile_url: str, max_posts: int = 
     page.goto(activity_url, wait_until="domcontentloaded")
     logger.info(f"Scraping posts from {activity_url}")
 
-    # Wait for at least one post card
     try:
         page.wait_for_selector("div.occludable-update", timeout=15000)
     except:
@@ -119,12 +106,10 @@ def fetch_all_posts(context: BrowserContext, profile_url: str, max_posts: int = 
         page.close()
         return []
 
-    # Do a few page-height scrolls to load posts
     for _ in range(3):
         page.evaluate("window.scrollBy(0, window.innerHeight)")
         page.wait_for_timeout(1000)
 
-    # Now run a JS snippet to extract post_url + content
     raw_posts = page.evaluate(f"""
       () => {{
         const cards = Array.from(

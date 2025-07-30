@@ -3,7 +3,6 @@
 from datetime import datetime
 import typer
 
-# ensure tables exist
 from src.db import init_db, SessionLocal
 init_db()
 
@@ -28,16 +27,12 @@ def scrape(profile_url: str):
     """
     Scrape LinkedIn profile + all posts for PROFILE_URL, and persist to SQLite.
     """
-    # 1) ensure we’re logged in
     ctx = ensure_logged_in()
 
-    # 2) scrape profile info & posts
     info  = fetch_profile_info(ctx, profile_url)
     posts = fetch_all_posts(ctx, profile_url)
 
-    # 3) persist to DB
     db = SessionLocal()
-    # — upsert Profile —
     profile = db.query(Profile).filter_by(url=profile_url).first()
     if not profile:
         profile = Profile(url=profile_url)
@@ -51,7 +46,6 @@ def scrape(profile_url: str):
     db.commit()
     db.refresh(profile)
 
-    # — replace old posts —
     db.query(Post).filter(Post.profile_id == profile.id).delete()
     db.commit()
     for p in posts:

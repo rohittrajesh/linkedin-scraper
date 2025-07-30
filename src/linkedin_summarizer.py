@@ -14,9 +14,7 @@ def summarize_posts(post_texts: List[str], max_sentences: int = 5) -> str:
     """
     Generate a concise summary (3-5 sentences) of the provided post texts using OpenAI.
     """
-    # Combine posts with a clear delimiter
     combined = "\n---\n".join(post_texts)
-    # Truncate if overly long
     if len(combined) > 15000:
         combined = combined[:15000] + "..."
 
@@ -46,7 +44,6 @@ def summarize_profile(profile_url: str) -> str:
         db.close()
         raise ValueError(f"No data found for profile URL: {profile_url}")
 
-    # Load posts while session is open
     post_texts = [p.content for p in profile.posts]
     db.close()
 
